@@ -6,6 +6,8 @@
 
 #include <PubSubClient.h>
 
+#include <ArduinoJson.h>
+
 #include "CRtspSession.h"
 #include "OV2640Streamer.h"
 #include "SimStreamer.h"
@@ -42,6 +44,8 @@ uint8_t *image = NULL;
 struct quirc_code code;
 struct quirc_data data;
 char last_qrcode_data[8896];
+
+StaticJsonDocument<200> doc;
 
 static void dumpData(const struct quirc_data *data) {
   Serial.printf("Payload: %s\n", data->payload);
@@ -225,6 +229,16 @@ void mqtt_reconnect() {
     if (mqttClient.connect("esp32-color-sensor")) {
       ESP_LOGD(TAG, "MQTT connection established");
       mqttClient.subscribe("sm_iot_lab");
+
+      doc["id"] = PICKUP_POINT_N;
+      doc["ipAddress"] = WiFi.localIP().toString();
+      size_t doc_size = measureJson(doc);
+      uint8_t *output = (uint8_t *)malloc(doc_size);
+
+      serializeJson(doc, (void *)output, doc_size);
+      mqttClient.publish("sm_iot_lab/cube_scanner/1/ip/post", output, doc_size);
+
+      free(output);
     } else {
       ESP_LOGE("MAIN", "MQTT connection failed, status=%d\nTry again in %d seconds", mqttClient.state(),
                WAIT_TIME_BEFORE_CONNECTION_RETRY);
