@@ -46,7 +46,7 @@ char last_qrcode_data[8896];
 static void dumpData(const struct quirc_data *data) {
   Serial.printf("Payload: %s\n", data->payload);
   if (strcmp(last_qrcode_data, (char *)data->payload) == 0) {
-    Serial.println("same");
+    Serial.println("new payload is the same as the old, skipping");
     return;
   }
 
@@ -54,9 +54,9 @@ static void dumpData(const struct quirc_data *data) {
   if (mqttClient.connected()) {
     bool res = mqttClient.publish(SCANNED_PUBLISH_TOPIC, (char *)data->payload);
     if (res) {
-      Serial.println("published");
+      Serial.println("qr code payload published");
     } else {
-      Serial.println("not published");
+      Serial.println("could not publish qr code payload");
     }
   } else {
     Serial.println("mqtt not connected");
