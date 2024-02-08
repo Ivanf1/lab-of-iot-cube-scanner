@@ -4,6 +4,8 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 
+#include <PubSubClient.h>
+
 #include "CRtspSession.h"
 #include "OV2640Streamer.h"
 #include "SimStreamer.h"
@@ -14,9 +16,19 @@
 #include "soc/rtc_cntl_reg.h"
 #include "soc/soc.h"
 
+#define WAIT_TIME_BEFORE_CONNECTION_RETRY 5000
+
+#define PICKUP_POINT_N "1"
+#define PICKUP_POINT_PUBLISH_BASE "sm_iot_lab/pickup_point"
+#define CUBE_SCANNED_PUBLISH "cube/scanned"
+#define SCANNED_PUBLISH_TOPIC PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" CUBE_SCANNED_PUBLISH
+
 static OV2640 cam;
 
 WebServer server(80);
+
+WiFiClient client;
+PubSubClient mqttClient(client);
 
 TaskHandle_t QRCodeReader_Task;
 struct QRCodeData {
@@ -29,9 +41,27 @@ struct quirc *q = quirc_new();
 uint8_t *image = NULL;
 struct quirc_code code;
 struct quirc_data data;
-String QRCodeResult = "";
+char last_qrcode_data[8896];
 
-static void dumpData(const struct quirc_data *data) { Serial.printf("Payload: %s\n", data->payload); }
+static void dumpData(const struct quirc_data *data) {
+  Serial.printf("Payload: %s\n", data->payload);
+  if (strcmp(last_qrcode_data, (char *)data->payload) == 0) {
+    Serial.println("same");
+    return;
+  }
+
+  memcpy(&last_qrcode_data, data->payload, data->payload_len);
+  if (mqttClient.connected()) {
+    bool res = mqttClient.publish(SCANNED_PUBLISH_TOPIC, (char *)data->payload);
+    if (res) {
+      Serial.println("published");
+    } else {
+      Serial.println("not published");
+    }
+  } else {
+    Serial.println("mqtt not connected");
+  }
+}
 
 void QRCodeReader(void *pvParameters) {
   Serial.println("QRCodeReader is ready\n");
@@ -98,7 +128,6 @@ void try_qrcode_decode(uint8_t *buffer, int width, int height, int size) {
 
     if (err) {
       Serial.println("Decoding FAILED\n");
-      QRCodeResult = "Decoding FAILED";
     } else {
       dumpData(&data);
     }
@@ -124,7 +153,7 @@ void handle_jpg_stream(void) {
   response = "--frame\r\n";
   response += "Content-Type: image/jpeg\r\n\r\n";
 
-  int frames = 0;
+  uint8_t frames = 0;
   size_t _jpg_buf_len = 0;
   uint8_t *_jpg_buf = NULL;
 
@@ -182,6 +211,28 @@ void handleNotFound() {
   server.send(200, "text/plain", message);
 }
 
+void on_mqtt_message_received(char *topic, byte *payload, unsigned int length) {
+  ESP_LOGD(TAG, "Message arrived in topic: %s\nMessage:", topic);
+  for (int i = 0; i < length; i++) {
+    ESP_LOGD(TAG, "%c", (char)payload[i]);
+  }
+  ESP_LOGD(TAG, "\n");
+}
+
+void mqtt_reconnect() {
+  while (!mqttClient.connected()) {
+    ESP_LOGD(TAG, "Attempting MQTT connection");
+    if (mqttClient.connect("esp32-color-sensor")) {
+      ESP_LOGD(TAG, "MQTT connection established");
+      mqttClient.subscribe("sm_iot_lab");
+    } else {
+      ESP_LOGE("MAIN", "MQTT connection failed, status=%d\nTry again in %d seconds", mqttClient.state(),
+               WAIT_TIME_BEFORE_CONNECTION_RETRY);
+      delay(WAIT_TIME_BEFORE_CONNECTION_RETRY);
+    }
+  }
+}
+
 void setup() {
   // Disable brownout detector.
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
@@ -212,10 +263,17 @@ void setup() {
   server.on("/", HTTP_GET, handle_jpg_stream);
   server.onNotFound(handleNotFound);
   server.begin();
+
+  mqttClient.setServer(BROKER_IP, BROKER_PORT);
+  mqttClient.setCallback(on_mqtt_message_received);
 }
 
-CStreamer *streamer;
-CRtspSession *session;
-WiFiClient client;
+void loop() {
+  server.handleClient();
 
-void loop() { server.handleClient(); }
+  if (!mqttClient.connected()) {
+    mqtt_reconnect();
+  }
+
+  mqttClient.loop();
+}
