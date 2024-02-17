@@ -1,29 +1,25 @@
 #include "OV2640.h"
 #include <Arduino.h>
+#include <ArduinoJson.h>
+#include <PubSubClient.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
 
-#include <PubSubClient.h>
-
-#include <ArduinoJson.h>
-
-#include "CRtspSession.h"
-#include "OV2640Streamer.h"
-#include "SimStreamer.h"
-#include "wifikeys.h"
-
 #include "quirc/quirc.h"
-
 #include "soc/rtc_cntl_reg.h"
-#include "soc/soc.h"
+
+#include "wifikeys.h"
 
 #define WAIT_TIME_BEFORE_CONNECTION_RETRY 5000
 
 #define PICKUP_POINT_N "1"
-#define PICKUP_POINT_PUBLISH_BASE "sm_iot_lab/pickup_point"
+#define PICKUP_POINT_N_INT 1
+#define PICKUP_POINT_PUBLISH_BASE "sm_iot_lab/cube_scanner"
 #define CUBE_SCANNED_PUBLISH "cube/scanned"
+#define IP_PUBLISH "ip/post"
 #define SCANNED_PUBLISH_TOPIC PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" CUBE_SCANNED_PUBLISH
+#define POST_IP_PUBLISH_TOPIC PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" IP_PUBLISH
 
 static OV2640 cam;
 
@@ -216,32 +212,31 @@ void handleNotFound() {
 }
 
 void on_mqtt_message_received(char *topic, byte *payload, unsigned int length) {
-  ESP_LOGD(TAG, "Message arrived in topic: %s\nMessage:", topic);
+  Serial.println("Message arrived in topic: Message:");
   for (int i = 0; i < length; i++) {
-    ESP_LOGD(TAG, "%c", (char)payload[i]);
+    // ESP_LOGD(TAG, "%c", (char)payload[i]);
   }
-  ESP_LOGD(TAG, "\n");
+  // ESP_LOGD(TAG, "\n");
 }
 
 void mqtt_reconnect() {
   while (!mqttClient.connected()) {
-    ESP_LOGD(TAG, "Attempting MQTT connection");
-    if (mqttClient.connect("esp32-color-sensor")) {
-      ESP_LOGD(TAG, "MQTT connection established");
-      mqttClient.subscribe("sm_iot_lab");
+    Serial.println("Attempting MQTT connection");
+    if (mqttClient.connect("cube-scanner-" PICKUP_POINT_N)) {
+      Serial.println("MQTT connection established");
+      // mqttClient.subscribe("sm_iot_lab");
 
-      doc["id"] = PICKUP_POINT_N;
+      doc["pickupPointN"] = PICKUP_POINT_N_INT;
       doc["ipAddress"] = WiFi.localIP().toString();
       size_t doc_size = measureJson(doc);
       uint8_t *output = (uint8_t *)malloc(doc_size);
 
       serializeJson(doc, (void *)output, doc_size);
-      mqttClient.publish("sm_iot_lab/cube_scanner/1/ip/post", output, doc_size);
+      mqttClient.publish(POST_IP_PUBLISH_TOPIC, output, doc_size);
 
       free(output);
     } else {
-      ESP_LOGE("MAIN", "MQTT connection failed, status=%d\nTry again in %d seconds", mqttClient.state(),
-               WAIT_TIME_BEFORE_CONNECTION_RETRY);
+      Serial.println("MQTT connection failed, status=Try again in seconds");
       delay(WAIT_TIME_BEFORE_CONNECTION_RETRY);
     }
   }
