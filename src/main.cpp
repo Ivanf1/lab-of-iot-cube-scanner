@@ -21,6 +21,15 @@
 #define SCANNED_PUBLISH_TOPIC PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" CUBE_SCANNED_PUBLISH
 #define POST_IP_PUBLISH_TOPIC PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" IP_PUBLISH
 
+static const char PROGMEM INDEX_HTML[] = R"rawliteral(
+<html><head><title></title><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{margin:auto;}
+img{position:relative;width:384px;height:288px;}
+#overlay{position:absolute;top:24.31%;left:29.48%;width:40%;height:50%;border:dashed red 2px;}
+#container{position:absolute;margin-left:calc(50% - 192px);margin-top:10px;}
+</style></head><body><div id="container"><img src="" id="vdstream"><div id="overlay"></div></div><script>window.onload=document.getElementById("vdstream").src=window.location.href.slice(0, -1) + ":80/stream";</script></body></html>
+)rawliteral";
+
 static OV2640 cam;
 
 WebServer server(80);
@@ -50,11 +59,11 @@ static void dumpData(const struct quirc_data *data) {
     return;
   }
 
-  memcpy(&last_qrcode_data, data->payload, data->payload_len);
   if (mqttClient.connected()) {
     bool res = mqttClient.publish(SCANNED_PUBLISH_TOPIC, (char *)data->payload);
     if (res) {
       Serial.println("qr code payload published");
+      memcpy(&last_qrcode_data, data->payload, data->payload_len);
     } else {
       Serial.println("could not publish qr code payload");
     }
@@ -83,6 +92,7 @@ void QRCodeReader(void *pvParameters) {
     int height = cam.getHeight();
     size_t size = cam.getSize();
 
+    // quirc_resize(_q, 280, 200);
     quirc_resize(_q, width, height);
     _image = quirc_begin(_q, NULL, NULL);
     memcpy(_image, buffer, size);
@@ -137,6 +147,8 @@ void try_qrcode_decode(uint8_t *buffer, int width, int height, int size) {
   image = NULL;
 }
 
+void handle_index(void) { server.send(200, "text/html", INDEX_HTML); }
+
 void handle_jpg_stream(void) {
   Serial.println("Stream start");
 
@@ -181,6 +193,7 @@ void handle_jpg_stream(void) {
     // perform qr code decode every 5 frames
     if (frames == 5) {
       try_qrcode_decode(buffer, width, height, size);
+      // try_qrcode_decode(buffer, 280, 200, size);
       frames = 0;
     }
     jpeg_converted = frame2jpg(cam.getCameraFb(), 80, &_jpg_buf, &_jpg_buf_len);
@@ -269,7 +282,8 @@ void setup() {
 
   createTaskQRCodeReader();
 
-  server.on("/", HTTP_GET, handle_jpg_stream);
+  server.on("/stream", HTTP_GET, handle_jpg_stream);
+  server.on("/", HTTP_GET, handle_index);
   server.onNotFound(handleNotFound);
   server.begin();
 
