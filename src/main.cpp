@@ -16,10 +16,11 @@
 
 #define WAIT_TIME_BEFORE_CONNECTION_RETRY 5000
 
-#define PICKUP_POINT_N                    "1"
-#define PICKUP_POINT_N_INT                1
+#define SCANNER_N                         "0"
+#define PICKUP_POINT_N                    "0"
+#define PICKUP_POINT_N_INT                0
 #define PICKUP_POINT_PUBLISH_BASE         "sm_iot_lab/cube_scanner"
-#define CUBE_SCANNED_PUBLISH              "cube/scanned"
+#define CUBE_SCANNED_PUBLISH              "cube_scanned"
 #define IP_PUBLISH                        "ip/post"
 #define SCANNED_PUBLISH_TOPIC             PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" CUBE_SCANNED_PUBLISH
 #define POST_IP_PUBLISH_TOPIC             PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" IP_PUBLISH
@@ -58,7 +59,16 @@ static void dumpData(const struct quirc_data* data) {
   }
 
   if (mqttClient.connected()) {
-    bool res = mqttClient.publish(SCANNED_PUBLISH_TOPIC, (char*)data->payload);
+    StaticJsonDocument<200> qrCodeDoc;
+    qrCodeDoc["pickupPointN"] = PICKUP_POINT_N_INT;
+    qrCodeDoc["payload"] = (char*)data->payload;
+    size_t doc_size = measureJson(qrCodeDoc);
+    uint8_t* output = (uint8_t*)malloc(doc_size);
+
+    serializeJson(qrCodeDoc, (void*)output, doc_size);
+    bool res = mqttClient.publish(SCANNED_PUBLISH_TOPIC, output, doc_size);
+
+    free(output);
     if (res) {
       ESP_LOGD(TAG, "qr code payload published");
       memcpy(&last_qrcode_data, data->payload, data->payload_len);
@@ -90,7 +100,6 @@ void QRCodeReader(void* pvParameters) {
     int height = cam.getHeight();
     size_t size = cam.getSize();
 
-    // quirc_resize(_q, 280, 200);
     quirc_resize(_q, width, height);
     _image = quirc_begin(_q, NULL, NULL);
     memcpy(_image, buffer, size);
@@ -191,7 +200,6 @@ void handle_jpg_stream(void) {
     // perform qr code decode every 5 frames
     if (frames == 5) {
       try_qrcode_decode(buffer, width, height, size);
-      // try_qrcode_decode(buffer, 280, 200, size);
       frames = 0;
     }
     jpeg_converted = frame2jpg(cam.getCameraFb(), 80, &_jpg_buf, &_jpg_buf_len);
@@ -230,12 +238,11 @@ void on_mqtt_message_received(char* topic, byte* payload, unsigned int length) {
   // ESP_LOGD(TAG, "\n");
 }
 
-void mqtt_reconnect() {
+void mqtt_connect() {
   while (!mqttClient.connected()) {
     ESP_LOGD(TAG, "Attempting MQTT connection");
-    if (mqttClient.connect("cube-scanner-" PICKUP_POINT_N)) {
+    if (mqttClient.connect("cube-scanner-" SCANNER_N, "sm_iot_lab/scanner/" SCANNER_N "/status", 2, false, "down")) {
       ESP_LOGD(TAG, "MQTT connection established");
-      // mqttClient.subscribe("sm_iot_lab");
 
       doc["pickupPointN"] = PICKUP_POINT_N_INT;
       doc["ipAddress"] = WiFi.localIP().toString();
@@ -244,6 +251,7 @@ void mqtt_reconnect() {
 
       serializeJson(doc, (void*)output, doc_size);
       mqttClient.publish(POST_IP_PUBLISH_TOPIC, output, doc_size);
+      mqttClient.publish("sm_iot_lab/scanner/" SCANNER_N "/status", "up");
 
       free(output);
     } else {
@@ -286,7 +294,7 @@ void loop() {
   server.handleClient();
 
   if (!mqttClient.connected()) {
-    mqtt_reconnect();
+    mqtt_connect();
   }
 
   mqttClient.loop();
