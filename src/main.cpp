@@ -241,7 +241,7 @@ void on_mqtt_message_received(char* topic, byte* payload, unsigned int length) {
 void mqtt_connect() {
   while (!mqttClient.connected()) {
     ESP_LOGD(TAG, "Attempting MQTT connection");
-    if (mqttClient.connect("cube-scanner-" SCANNER_N, "sm_iot_lab/scanner/" SCANNER_N "/status", 2, false, "down")) {
+    if (mqttClient.connect("cube-scanner-" SCANNER_N, "sm_iot_lab/scanner/" SCANNER_N "/status", 2, true, "down")) {
       ESP_LOGD(TAG, "MQTT connection established");
 
       doc["pickupPointN"] = PICKUP_POINT_N_INT;
@@ -251,7 +251,7 @@ void mqtt_connect() {
 
       serializeJson(doc, (void*)output, doc_size);
       mqttClient.publish(POST_IP_PUBLISH_TOPIC, output, doc_size);
-      mqttClient.publish("sm_iot_lab/scanner/" SCANNER_N "/status", "up");
+      mqttClient.publish("sm_iot_lab/scanner/" SCANNER_N "/status", "up", true);
 
       free(output);
     } else {
