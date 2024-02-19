@@ -1,4 +1,5 @@
 #include "OV2640.h"
+#include "esp_log.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
@@ -11,23 +12,20 @@
 
 #include "wifikeys.h"
 
+#define TAG                               "MAIN"
+
 #define WAIT_TIME_BEFORE_CONNECTION_RETRY 5000
 
-#define PICKUP_POINT_N "1"
-#define PICKUP_POINT_N_INT 1
-#define PICKUP_POINT_PUBLISH_BASE "sm_iot_lab/cube_scanner"
-#define CUBE_SCANNED_PUBLISH "cube/scanned"
-#define IP_PUBLISH "ip/post"
-#define SCANNED_PUBLISH_TOPIC PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" CUBE_SCANNED_PUBLISH
-#define POST_IP_PUBLISH_TOPIC PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" IP_PUBLISH
+#define PICKUP_POINT_N                    "1"
+#define PICKUP_POINT_N_INT                1
+#define PICKUP_POINT_PUBLISH_BASE         "sm_iot_lab/cube_scanner"
+#define CUBE_SCANNED_PUBLISH              "cube/scanned"
+#define IP_PUBLISH                        "ip/post"
+#define SCANNED_PUBLISH_TOPIC             PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" CUBE_SCANNED_PUBLISH
+#define POST_IP_PUBLISH_TOPIC             PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" IP_PUBLISH
 
 static const char PROGMEM INDEX_HTML[] = R"rawliteral(
-<html><head><title></title><meta name="viewport" content="width=device-width, initial-scale=1">
-<style>body{margin:auto;}
-img{position:relative;width:384px;height:288px;}
-#overlay{position:absolute;top:24.31%;left:29.48%;width:40%;height:50%;border:dashed red 2px;}
-#container{position:absolute;margin-left:calc(50% - 192px);margin-top:10px;}
-</style></head><body><div id="container"><img src="" id="vdstream"><div id="overlay"></div></div><script>window.onload=document.getElementById("vdstream").src=window.location.href.slice(0, -1) + ":80/stream";</script></body></html>
+<html><head><title></title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:auto;}img{position:relative;width:384px;height:288px;}#overlay{position:absolute;top:24.31%;left:29.48%;width:40%;height:50%;border:dashed red 2px;}#container{position:absolute;margin-left:calc(50% - 192px);margin-top:10px;}</style></head><body><div id="container"><img src="" id="vdstream"><div id="overlay"></div></div><script>window.onload=document.getElementById("vdstream").src=window.location.href.slice(0, -1) + ":80/stream";</script></body></html>
 )rawliteral";
 
 static OV2640 cam;
@@ -44,50 +42,50 @@ struct QRCodeData {
   uint8_t payload[1024];
   int payloadLen;
 };
-struct quirc *q = quirc_new();
-uint8_t *image = NULL;
+struct quirc* q = quirc_new();
+uint8_t* image = NULL;
 struct quirc_code code;
 struct quirc_data data;
 char last_qrcode_data[8896];
 
 StaticJsonDocument<200> doc;
 
-static void dumpData(const struct quirc_data *data) {
-  Serial.printf("Payload: %s\n", data->payload);
-  if (strcmp(last_qrcode_data, (char *)data->payload) == 0) {
-    Serial.println("new payload is the same as the old, skipping");
+static void dumpData(const struct quirc_data* data) {
+  ESP_LOGD(TAG, "Payload: %s\n", data->payload);
+  if (strcmp(last_qrcode_data, (char*)data->payload) == 0) {
+    ESP_LOGD(TAG, "new payload is the same as the old, skipping");
     return;
   }
 
   if (mqttClient.connected()) {
-    bool res = mqttClient.publish(SCANNED_PUBLISH_TOPIC, (char *)data->payload);
+    bool res = mqttClient.publish(SCANNED_PUBLISH_TOPIC, (char*)data->payload);
     if (res) {
-      Serial.println("qr code payload published");
+      ESP_LOGD(TAG, "qr code payload published");
       memcpy(&last_qrcode_data, data->payload, data->payload_len);
     } else {
-      Serial.println("could not publish qr code payload");
+      ESP_LOGD(TAG, "could not publish qr code payload");
     }
   } else {
-    Serial.println("mqtt not connected");
+    ESP_LOGD(TAG, "mqtt not connected");
   }
 }
 
-void QRCodeReader(void *pvParameters) {
-  Serial.println("QRCodeReader is ready\n");
+void QRCodeReader(void* pvParameters) {
+  ESP_LOGD(TAG, "QRCodeReader is ready\n");
 
-  struct quirc *_q = NULL;
-  uint8_t *_image = NULL;
+  struct quirc* _q = NULL;
+  uint8_t* _image = NULL;
   struct quirc_code _code;
   struct quirc_data _data;
 
   while (true) {
     _q = quirc_new();
     if (_q == NULL) {
-      Serial.print("can't create quirc object\r\n");
+      ESP_LOGD(TAG, "can't create quirc object\r\n");
       continue;
     }
 
-    uint8_t *buffer = cam.getfb();
+    uint8_t* buffer = cam.getfb();
     int width = cam.getWidth();
     int height = cam.getHeight();
     size_t size = cam.getSize();
@@ -104,7 +102,7 @@ void QRCodeReader(void *pvParameters) {
       quirc_decode_error_t err = quirc_decode(&_code, &_data);
 
       if (err) {
-        Serial.println("Decoding FAILED\n");
+        ESP_LOGD(TAG, "Decoding FAILED\n");
       } else {
         dumpData(&_data);
       }
@@ -119,10 +117,10 @@ void createTaskQRCodeReader() {
   xTaskCreatePinnedToCore(QRCodeReader, "QRCodeReader_Task", 20000, NULL, tskIDLE_PRIORITY, &QRCodeReader_Task, 0);
 }
 
-void try_qrcode_decode(uint8_t *buffer, int width, int height, int size) {
+void try_qrcode_decode(uint8_t* buffer, int width, int height, int size) {
   q = quirc_new();
   if (q == NULL) {
-    Serial.print("can't create quirc object\r\n");
+    ESP_LOGD(TAG, "can't create quirc object\r\n");
     return;
   }
 
@@ -137,7 +135,7 @@ void try_qrcode_decode(uint8_t *buffer, int width, int height, int size) {
     quirc_decode_error_t err = quirc_decode(&code, &data);
 
     if (err) {
-      Serial.println("Decoding FAILED\n");
+      ESP_LOGD(TAG, "Decoding FAILED\n");
     } else {
       dumpData(&data);
     }
@@ -150,10 +148,10 @@ void try_qrcode_decode(uint8_t *buffer, int width, int height, int size) {
 void handle_index(void) { server.send(200, "text/html", INDEX_HTML); }
 
 void handle_jpg_stream(void) {
-  Serial.println("Stream start");
+  ESP_LOGD(TAG, "Stream start");
 
   if (QRCodeReader_Task != NULL) {
-    Serial.println("Deleting qrcode reader task");
+    ESP_LOGD(TAG, "Deleting qrcode reader task");
     vTaskDelete(QRCodeReader_Task);
   }
 
@@ -167,9 +165,9 @@ void handle_jpg_stream(void) {
 
   uint8_t frames = 0;
   size_t _jpg_buf_len = 0;
-  uint8_t *_jpg_buf = NULL;
+  uint8_t* _jpg_buf = NULL;
 
-  uint8_t *buffer = NULL;
+  uint8_t* buffer = NULL;
   int width = 0;
   int height = 0;
   size_t size = 0;
@@ -198,7 +196,7 @@ void handle_jpg_stream(void) {
     }
     jpeg_converted = frame2jpg(cam.getCameraFb(), 80, &_jpg_buf, &_jpg_buf_len);
 
-    client.write((char *)_jpg_buf, _jpg_buf_len);
+    client.write((char*)_jpg_buf, _jpg_buf_len);
     server.sendContent("\r\n");
     free(_jpg_buf);
 
@@ -207,7 +205,7 @@ void handle_jpg_stream(void) {
     }
   }
 
-  Serial.println("Stream end");
+  ESP_LOGD(TAG, "Stream end");
 
   createTaskQRCodeReader();
 }
@@ -224,8 +222,8 @@ void handleNotFound() {
   server.send(200, "text/plain", message);
 }
 
-void on_mqtt_message_received(char *topic, byte *payload, unsigned int length) {
-  Serial.println("Message arrived in topic: Message:");
+void on_mqtt_message_received(char* topic, byte* payload, unsigned int length) {
+  ESP_LOGD(TAG, "Message arrived in topic: Message:");
   for (int i = 0; i < length; i++) {
     // ESP_LOGD(TAG, "%c", (char)payload[i]);
   }
@@ -234,22 +232,22 @@ void on_mqtt_message_received(char *topic, byte *payload, unsigned int length) {
 
 void mqtt_reconnect() {
   while (!mqttClient.connected()) {
-    Serial.println("Attempting MQTT connection");
+    ESP_LOGD(TAG, "Attempting MQTT connection");
     if (mqttClient.connect("cube-scanner-" PICKUP_POINT_N)) {
-      Serial.println("MQTT connection established");
+      ESP_LOGD(TAG, "MQTT connection established");
       // mqttClient.subscribe("sm_iot_lab");
 
       doc["pickupPointN"] = PICKUP_POINT_N_INT;
       doc["ipAddress"] = WiFi.localIP().toString();
       size_t doc_size = measureJson(doc);
-      uint8_t *output = (uint8_t *)malloc(doc_size);
+      uint8_t* output = (uint8_t*)malloc(doc_size);
 
-      serializeJson(doc, (void *)output, doc_size);
+      serializeJson(doc, (void*)output, doc_size);
       mqttClient.publish(POST_IP_PUBLISH_TOPIC, output, doc_size);
 
       free(output);
     } else {
-      Serial.println("MQTT connection failed, status=Try again in seconds");
+      ESP_LOGD(TAG, "MQTT connection failed, status=Try again in seconds");
       delay(WAIT_TIME_BEFORE_CONNECTION_RETRY);
     }
   }
@@ -259,7 +257,7 @@ void setup() {
   // Disable brownout detector.
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 
-  Serial.println("booting");
+  ESP_LOGD(TAG, "booting");
 
   Serial.begin(115200);
   while (!Serial) {
@@ -267,18 +265,11 @@ void setup() {
   }
   cam.init(esp32cam_aithinker_config);
 
-  IPAddress ip;
-
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(F("."));
   }
-  ip = WiFi.localIP();
-  Serial.println(F("WiFi connected"));
-  Serial.println("");
-  Serial.println(ip);
 
   createTaskQRCodeReader();
 

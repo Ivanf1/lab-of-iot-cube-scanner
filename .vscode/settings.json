@@ -1,3 +1,12 @@
 {
-  "cSpell.words": ["aithinker", "mqtt", "PIXFORMAT", "PROGMEM", "qrcode", "quirc", "rawliteral"]
+  "cSpell.words": [
+    "aithinker",
+    "LOGD",
+    "mqtt",
+    "PIXFORMAT",
+    "PROGMEM",
+    "qrcode",
+    "quirc",
+    "rawliteral"
+  ]
 }

@@ -2,9 +2,32 @@ BasedOnStyle: LLVM
 UseTab: Never
 IndentWidth: 2
 TabWidth: 2
-AllowShortIfStatementsOnASingleLine: false
-IndentCaseLabels: false
 ColumnLimit: 120
-AccessModifierOffset: -4
 NamespaceIndentation: All
-FixNamespaceComments: false
+
+AlignAfterOpenBracket: BlockIndent
+
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: true
+  AcrossComments: false
+
+AlignOperands: Align
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+
+BreakBeforeBinaryOperators: NonAssignment
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterEnum: false
+  AfterStruct: false
+  SplitEmptyFunction: false
+  AfterCaseLabel: false
+  AfterClass: true
+  AfterControlStatement: Never
+  AfterFunction: false
+  AfterNamespace: false
+  AfterExternBlock: true
+EmptyLineBeforeAccessModifier: Always
+
+PointerAlignment: Left
