@@ -20,7 +20,7 @@
 #define PICKUP_POINT_N                    "0"
 #define PICKUP_POINT_N_INT                0
 #define PICKUP_POINT_PUBLISH_BASE         "sm_iot_lab/cube_scanner"
-#define CUBE_SCANNED_PUBLISH              "cube_scanned"
+#define CUBE_SCANNED_PUBLISH              "cube/scanned"
 #define IP_PUBLISH                        "ip/post"
 #define SCANNED_PUBLISH_TOPIC             PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" CUBE_SCANNED_PUBLISH
 #define POST_IP_PUBLISH_TOPIC             PICKUP_POINT_PUBLISH_BASE "/" PICKUP_POINT_N "/" IP_PUBLISH
